@@ -1,0 +1,85 @@
+# application-postgres.yml — PostgreSQL Profile Override
+# ========================================================
+# Activate this profile with: --spring.profiles.active=postgres
+# Or environment variable:    SPRING_PROFILES_ACTIVE=postgres
+#
+# This file ONLY declares what changes from application.yml.
+# All other properties (server.port, management.*, springdoc.*, etc.)
+# are inherited from the base application.yml.
+#
+# HOW SPRING PROFILES WORK:
+# Spring loads application.yml first, then merges the active profile's
+# file on top, with profile-specific values taking precedence.
+# This "layered config" approach avoids duplication while allowing
+# environment-specific overrides.
+#
+# ADDING THE POSTGRESQL DRIVER:
+# Before using this profile, uncomment the postgresql dependency in pom.xml.
+# The H2 driver does not speak PostgreSQL wire protocol.
+#
+# SECRETS MANAGEMENT IN PRODUCTION:
+# Never hardcode passwords in configuration files committed to version control.
+# Use environment variables:
+#   DB_PASSWORD=mysecretpassword java -jar app.jar --spring.profiles.active=postgres
+# Or inject from a secrets manager (AWS Secrets Manager, HashiCorp Vault, K8s Secrets).
+# The ${DB_PASSWORD} syntax reads the environment variable at startup.
+
+spring:
+
+  # ── DataSource — PostgreSQL ────────────────────────────────────────────────
+  datasource:
+    # ${VAR:default} syntax: read from env var VAR, fall back to "default" if not set.
+    # This makes local development easy (use defaults) and production secure (use env vars).
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:taskdb}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:secret}
+
+    # HikariCP connection pool tuning — critical for production performance.
+    # HikariCP is the default pool in Spring Boot (included by spring-boot-starter-data-jpa).
+    hikari:
+      # Maximum number of connections in the pool.
+      # Rule of thumb: (number_of_cores * 2) + effective_spindle_count
+      # For a 2-core machine: ~5 connections is often optimal.
+      # Too many connections = connection overhead + DB contention.
+      maximum-pool-size: 10
+      # Minimum idle connections to maintain.
+      minimum-idle: 2
+      # How long (ms) to wait for a connection before throwing an exception.
+      connection-timeout: 30000
+      # How long (ms) an idle connection can sit in the pool before being removed.
+      idle-timeout: 600000
+      # How long (ms) a connection lives before being forcibly replaced (prevents stale connections).
+      max-lifetime: 1800000
+
+  # ── JPA / Hibernate — PostgreSQL ──────────────────────────────────────────
+  jpa:
+    hibernate:
+      # "validate" — Hibernate checks that the DB schema matches the entities.
+      # If they don't match, startup fails with a clear error.
+      # In production, use a migration tool (Flyway or Liquibase) to manage schema.
+      # Flyway runs SQL migration scripts in order (V1__create_tasks.sql, V2__add_index.sql)
+      # and tracks which have run — safe, repeatable, versioned schema changes.
+      ddl-auto: validate
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    # Reduce SQL logging noise in production (or redirect to a dedicated logger)
+    show-sql: false
+
+  # ── H2 Console — DISABLED in PostgreSQL profile ───────────────────────────
+  h2:
+    console:
+      enabled: false  # Never expose H2 console when using a real database
+
+# ── Flyway (Schema Migrations) ─────────────────────────────────────────────
+# Uncomment when you add the Flyway dependency to pom.xml:
+#   <dependency>
+#     <groupId>org.flywaydb</groupId>
+#     <artifactId>flyway-core</artifactId>
+#   </dependency>
+# Then place migration scripts in src/main/resources/db/migration/
+# Example: V1__create_tasks_table.sql
+#
+# spring:
+#   flyway:
+#     enabled: true
+#     baseline-on-migrate: true   # for existing databases without Flyway history

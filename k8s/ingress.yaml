@@ -1,0 +1,119 @@
+# k8s/ingress.yaml — Kubernetes Ingress
+# =========================================
+# An Ingress is a Layer 7 (HTTP/HTTPS) load balancer and router.
+# It sits at the cluster boundary and routes external traffic to internal Services.
+#
+# INGRESS vs LOADBALANCER SERVICE:
+#   A LoadBalancer Service provisions one cloud load balancer per Service.
+#   An Ingress uses ONE load balancer for ALL services, routing by hostname/path.
+#   For microservices with many services, Ingress is far more cost-effective.
+#
+# INGRESS CONTROLLERS:
+# The Ingress resource is just a configuration spec — it needs an Ingress Controller
+# to act on it. Common controllers:
+#   nginx          — open-source, very common, used here
+#   traefik        — popular in Docker/K8s environments
+#   AWS ALB        — native AWS Application Load Balancer
+#   GKE Ingress    — GCP's native Ingress controller
+#
+# Install nginx ingress controller (for local kind/minikube):
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+#
+# APPLY:    kubectl apply -f k8s/ingress.yaml
+# DESCRIBE: kubectl describe ingress task-manager-ingress
+# LIST:     kubectl get ingress
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+
+metadata:
+  name: task-manager-ingress
+  namespace: default
+  labels:
+    app: task-manager
+
+  # ── Annotations ────────────────────────────────────────────────────────────
+  # Annotations are controller-specific configuration. They tell the specific
+  # Ingress controller (nginx in this case) how to handle requests.
+  annotations:
+    # Use the nginx ingress controller class
+    kubernetes.io/ingress.class: "nginx"
+
+    # ── TLS / HTTPS (uncomment for production) ─────────────────────────────
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # This annotation tells cert-manager to automatically provision a Let's Encrypt
+    # certificate for the hosts defined below. Requires cert-manager to be installed:
+    #   kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+
+    # ── Rate Limiting (uncomment to enable) ───────────────────────────────
+    # nginx.ingress.kubernetes.io/limit-rps: "10"         # Max 10 requests/second per IP
+    # nginx.ingress.kubernetes.io/limit-connections: "5"  # Max 5 concurrent connections per IP
+
+    # ── Request Body Size ────────────────────────────────────────────────
+    # nginx.ingress.kubernetes.io/proxy-body-size: "1m"   # Max 1MB request body
+
+    # ── CORS (uncomment if your frontend is on a different origin) ───────
+    # nginx.ingress.kubernetes.io/enable-cors: "true"
+    # nginx.ingress.kubernetes.io/cors-allow-origin: "https://yourfrontend.com"
+    # nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+
+spec:
+  # ── IngressClass ──────────────────────────────────────────────────────────
+  # Newer way to select the Ingress controller (supersedes kubernetes.io/ingress.class annotation)
+  ingressClassName: nginx
+
+  # ── TLS ───────────────────────────────────────────────────────────────────
+  # Uncomment for HTTPS. cert-manager will create the secret named here.
+  # tls:
+  #   - hosts:
+  #       - api.yourdomain.com
+  #     secretName: task-manager-tls   # cert-manager populates this Secret
+
+  # ── Routing Rules ─────────────────────────────────────────────────────────
+  rules:
+    # ── Route by hostname ───────────────────────────────────────────────────
+    # Requests to this hostname are handled by the paths below.
+    # For local testing: add to /etc/hosts: 127.0.0.1 task-manager.local
+    - host: task-manager.local
+      http:
+        paths:
+          # Route all /api requests to the task-manager service
+          - path: /api
+            pathType: Prefix   # Prefix: /api/v1/tasks matches /api
+            backend:
+              service:
+                name: task-manager-svc   # Must match Service metadata.name
+                port:
+                  number: 80             # Must match Service spec.ports[].port
+
+          # Route Actuator health endpoints (for external monitoring)
+          - path: /actuator/health
+            pathType: Prefix
+            backend:
+              service:
+                name: task-manager-svc
+                port:
+                  number: 80
+
+          # Route Swagger UI (disable in production or restrict with auth annotations)
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: task-manager-svc
+                port:
+                  number: 80
+
+          # Route OpenAPI spec
+          - path: /v3/api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: task-manager-svc
+                port:
+                  number: 80
+
+    # ── Wildcard host (alternative to named host for simpler setups) ─────────
+    # Remove 'host' entirely to match any hostname:
+    # - http:
+    #     paths: ...

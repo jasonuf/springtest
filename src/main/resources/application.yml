@@ -1,0 +1,131 @@
+# application.yml — Primary Application Configuration
+# =====================================================
+# Spring Boot reads this file automatically at startup.
+# YAML format uses indentation for nesting (2 spaces per level).
+# This file applies to ALL environments unless overridden by a profile file.
+#
+# PROFILE-SPECIFIC FILES:
+# Create application-{profile}.yml to override properties for a specific profile.
+# Example: application-postgres.yml overrides the datasource for PostgreSQL.
+# Activate a profile at runtime:
+#   java -jar app.jar --spring.profiles.active=postgres
+#   OR set env variable: SPRING_PROFILES_ACTIVE=postgres
+#   OR in Docker Compose/K8s via environment variables (see docker-compose.yml)
+#
+# ENVIRONMENT VARIABLE OVERRIDE:
+# Every property in this file can be overridden by an environment variable.
+# Spring converts property names to env var names:
+#   spring.datasource.url  →  SPRING_DATASOURCE_URL
+#   server.port            →  SERVER_PORT
+# This is essential for Kubernetes (ConfigMap/Secret) and cloud deployments.
+
+spring:
+  application:
+    # Used in log messages, Actuator info endpoint, and Swagger UI title.
+    name: task-manager
+
+  # ── DataSource (Database Connection) ──────────────────────────────────────
+  datasource:
+    # H2 in-memory database.
+    # jdbc:h2:mem:{dbname}  — creates an in-memory database named "taskdb"
+    # DB_CLOSE_DELAY=-1     — keeps the database alive as long as the JVM runs
+    # DB_CLOSE_ON_EXIT=FALSE — prevents auto-close on last connection close
+    url: jdbc:h2:mem:taskdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  # ── H2 Console ──────────────────────────────────────────────────────────
+  h2:
+    console:
+      # Enable the H2 web console for development.
+      # Access at: http://localhost:8080/h2-console
+      # IMPORTANT: Disabled in application-postgres.yml and should NEVER
+      # be enabled in any production configuration.
+      enabled: true
+      path: /h2-console
+
+  # ── JPA / Hibernate ───────────────────────────────────────────────────────
+  jpa:
+    hibernate:
+      # DDL auto-generation strategy. Options:
+      #   none         — do nothing (use for production with Flyway/Liquibase)
+      #   validate     — verify schema matches entities, throw if not
+      #   update       — add missing columns/tables (NEVER use in production)
+      #   create       — drop and recreate schema on startup
+      #   create-drop  — create on startup, DROP on shutdown (perfect for H2 dev)
+      ddl-auto: create-drop
+    # Log the SQL Hibernate generates — very useful for understanding what JPA does.
+    show-sql: true
+    properties:
+      hibernate:
+        # Format the logged SQL for readability.
+        format_sql: true
+    # Tells Spring Boot to use the H2 dialect — optimised SQL syntax for H2.
+    # Overridden to PostgreSQLDialect in application-postgres.yml.
+    database-platform: org.hibernate.dialect.H2Dialect
+
+  # ── JSON Serialisation ─────────────────────────────────────────────────────
+  jackson:
+    serialization:
+      # Serialise LocalDateTime as ISO-8601 string: "2024-01-15T10:30:00"
+      # instead of a JSON array: [2024, 1, 15, 10, 30, 0]
+      write-dates-as-timestamps: false
+    # Include field names in enums even if they have no mapped value
+    deserialization:
+      fail-on-unknown-properties: false  # ignore unknown JSON fields (tolerant reading)
+
+# ── Server ──────────────────────────────────────────────────────────────────
+server:
+  port: 8080
+  # Include exception messages in error responses (disable in production if
+  # you're not using GlobalExceptionHandler — Spring's default error response
+  # omits the message field by default for security reasons)
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# ── Actuator ────────────────────────────────────────────────────────────────
+# Spring Boot Actuator exposes operational endpoints for monitoring.
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        # Whitelist which endpoints are accessible over HTTP.
+        # Available endpoints: health, info, metrics, env, beans, mappings,
+        #                      loggers, threaddump, heapdump, scheduledtasks
+        # WARNING: "env" and "beans" expose configuration and internal details.
+        # In production, restrict to: health,info,metrics
+        include: health, info, metrics, env, mappings
+  endpoint:
+    health:
+      # "always" shows full health details (component statuses).
+      # In production, use "when-authorized" or "never" to hide internals.
+      show-details: always
+      # Enable Kubernetes-specific probes:
+      #   /actuator/health/liveness  — is the JVM alive?
+      #   /actuator/health/readiness — is the app ready to accept traffic?
+      probes:
+        enabled: true
+  # Include application info in /actuator/info
+  info:
+    env:
+      enabled: true
+
+# ── Application Info (appears at /actuator/info) ──────────────────────────
+info:
+  app:
+    name: ${spring.application.name}
+    description: Educational Spring Boot Task Manager API
+    version: 1.0.0
+
+# ── SpringDoc / Swagger ──────────────────────────────────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    # Expand operations by default for better readability
+    operations-sorter: alpha
+    tags-sorter: alpha

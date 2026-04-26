@@ -1,0 +1,105 @@
+# .gitignore — Files and directories to exclude from version control
+# ==================================================================
+# Git uses this file to determine which files to NOT track.
+# Files already committed are NOT automatically ignored — you must
+# git rm --cached <file> to stop tracking a previously committed file.
+
+# ── Maven Build Output ────────────────────────────────────────────────────
+target/
+# Maven downloads dependencies here. Never commit them — they're reproduced
+# by running `mvn dependency:go-offline` or `mvn package`.
+.mvn/repository/
+
+# ── Java Compiled Classes ─────────────────────────────────────────────────
+*.class
+*.jar
+*.war
+*.ear
+# Exception: don't ignore wrapper jars if you use Maven Wrapper
+!.mvn/wrapper/maven-wrapper.jar
+
+# ── IDE Configuration ────────────────────────────────────────────────────
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# NetBeans
+nbproject/
+build/
+nbbuild/
+dist/
+nbdist/
+
+# ── OS Files ────────────────────────────────────────────────────────────
+.DS_Store           # macOS folder metadata
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db           # Windows thumbnail cache
+
+# ── Local Configuration (NEVER commit) ──────────────────────────────────
+# Local overrides should be in application-local.yml (add to this list):
+application-local.yml
+application-local.yaml
+# Environment files with secrets
+.env
+.env.local
+.env.production
+*.env
+
+# ── Terraform ────────────────────────────────────────────────────────────
+# Terraform provider plugins (downloaded by `terraform init`, ~100MB)
+terraform/.terraform/
+.terraform/
+
+# Terraform state files contain sensitive information (resource IDs, IPs)
+# and should be stored in a remote backend (S3), not committed.
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfstate
+terraform/*.tfstate.backup
+*.tfstate
+*.tfstate.backup
+
+# Terraform plan output (can contain sensitive values in plain text)
+terraform/*.tfplan
+*.tfplan
+
+# Variable files may contain secrets
+terraform/*.tfvars
+# Exception: commit non-secret variable files with a different extension or
+# use terraform.tfvars.example as a template (committed) + terraform.tfvars (ignored)
+!terraform/*.tfvars.example
+
+# Terraform lock file SHOULD be committed (pins provider versions for reproducibility)
+# !terraform/.terraform.lock.hcl  (this is already tracked if present)
+
+# ── Docker ───────────────────────────────────────────────────────────────
+# Don't commit Docker build context caches or credentials
+.dockerignore       # This file itself should be committed — don't ignore it
+docker-compose.override.yml  # Local overrides to docker-compose.yml
+
+# ── Logs ─────────────────────────────────────────────────────────────────
+*.log
+logs/
+spring.log
+
+# ── Test Reports ─────────────────────────────────────────────────────────
+# Maven Surefire generates these in target/ (already ignored above)
+# Keep this explicit in case report directories end up outside target/
+test-results/
+coverage/

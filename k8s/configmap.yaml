@@ -1,0 +1,74 @@
+# k8s/configmap.yaml — Kubernetes ConfigMap
+# ===========================================
+# A ConfigMap stores non-sensitive configuration data as key-value pairs.
+# Pods (containers) can consume ConfigMap data as:
+#   1. Environment variables (shown here)
+#   2. Command-line arguments
+#   3. Volume-mounted files (for configuration files like application.yml)
+#
+# CONFIGMAP vs SECRET:
+#   ConfigMap — non-sensitive: feature flags, URLs, Spring profiles, port numbers
+#   Secret     — sensitive:   passwords, API keys, TLS certificates, OAuth client secrets
+#   Secrets are base64-encoded (not encrypted by default in Kubernetes!). For real
+#   encryption, use: sealed-secrets, External Secrets Operator, or AWS Secrets Manager.
+#
+# APPLY: kubectl apply -f k8s/configmap.yaml
+# VIEW:  kubectl get configmap task-manager-config -o yaml
+# DELETE: kubectl delete configmap task-manager-config
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: task-manager-config  # Referenced in deployment.yaml's envFrom block
+  namespace: default          # Kubernetes namespace — "default" for simple setups.
+                               # Production: use dedicated namespaces (staging, prod)
+  labels:
+    app: task-manager
+    # Labels are key-value metadata for organising and selecting resources.
+    # Used by selectors in Services and Deployments.
+
+data:
+  # These key-value pairs become environment variables in the pod.
+  # Spring Boot reads env vars and maps them to application properties:
+  #   SPRING_PROFILES_ACTIVE → spring.profiles.active
+  #   SERVER_PORT            → server.port
+
+  SPRING_PROFILES_ACTIVE: "postgres"
+  # In K8s, we run with PostgreSQL (deployed separately or as a managed service
+  # like AWS RDS, GCP Cloud SQL, Azure Database for PostgreSQL).
+  # Set to "default" if using H2 (not recommended for Kubernetes deployments).
+
+  SERVER_PORT: "8080"
+
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics"
+  # Restrict Actuator exposure in production — don't expose "env" or "beans"
+  # which reveal internal configuration details.
+
+  # ── Database connection (non-sensitive parts) ────────────────────────────
+  # Non-secret database config here. The password goes in a Secret (see below).
+  DB_HOST: "postgres-service"   # Kubernetes Service name for the PostgreSQL pod
+  DB_PORT: "5432"
+  DB_NAME: "taskdb"
+  DB_USER: "postgres"
+  # DB_PASSWORD should come from a Kubernetes Secret, NOT a ConfigMap.
+  # See the commented Secret definition below.
+
+---
+# ── Kubernetes Secret (for reference — store passwords here, not ConfigMap) ──
+# In practice, create this with kubectl, not by committing to git:
+#   kubectl create secret generic task-manager-secrets \
+#     --from-literal=DB_PASSWORD=mysecretpassword
+#
+# Or manage secrets with an operator (External Secrets Operator, Sealed Secrets)
+# that syncs from a secure vault (AWS Secrets Manager, HashiCorp Vault).
+#
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: task-manager-secrets
+#   namespace: default
+# type: Opaque
+# data:
+#   # Values must be base64-encoded: echo -n "mysecretpassword" | base64
+#   DB_PASSWORD: bXlzZWNyZXRwYXNzd29yZA==

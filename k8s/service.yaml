@@ -1,0 +1,56 @@
+# k8s/service.yaml — Kubernetes Service
+# ========================================
+# A Kubernetes Service provides a stable network endpoint to reach a set of pods.
+# Pods are ephemeral — they die and get replaced with new IPs. A Service provides
+# a single stable DNS name and IP that load-balances across healthy pod replicas.
+#
+# SERVICE TYPES:
+#   ClusterIP    — internal only, not reachable from outside the cluster (default)
+#   NodePort     — exposes on every node's IP at a static port (dev/simple setups)
+#   LoadBalancer — provisions a cloud load balancer (AWS ALB/NLB, GCP LB, Azure LB)
+#   ExternalName — maps to a DNS name (for accessing external services)
+#
+# We use ClusterIP because external traffic enters through the Ingress (see ingress.yaml).
+# The Ingress terminates TLS, handles routing, and forwards to this Service.
+#
+# APPLY:    kubectl apply -f k8s/service.yaml
+# DESCRIBE: kubectl describe service task-manager-svc
+# TEST (from within cluster): kubectl run test --image=busybox --rm -it -- wget task-manager-svc/actuator/health
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: task-manager-svc    # DNS name within the cluster: task-manager-svc.default.svc.cluster.local
+  namespace: default
+  labels:
+    app: task-manager
+
+spec:
+  # ── Type ─────────────────────────────────────────────────────────────────
+  # ClusterIP: accessible only from within the cluster.
+  # External traffic arrives via the Ingress controller (ingress.yaml).
+  type: ClusterIP
+
+  # ── Selector ──────────────────────────────────────────────────────────────
+  # Identifies which pods this Service routes traffic to.
+  # Must match labels defined in the Deployment's pod template.
+  # The Service continuously watches for pods with these labels and updates
+  # its endpoint list as pods start and stop.
+  selector:
+    app: task-manager
+
+  # ── Ports ─────────────────────────────────────────────────────────────────
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80           # Port the Service listens on (inside the cluster)
+      targetPort: 8080   # Port on the pod to forward to (matches containerPort in deployment.yaml)
+      # Clients inside the cluster connect to: http://task-manager-svc:80
+      # The Service translates this to: http://<pod-ip>:8080
+
+  # ── Session Affinity ──────────────────────────────────────────────────────
+  # sessionAffinity: ClientIP  # Uncomment to pin a client IP to the same pod
+  # Default is None (round-robin load balancing). Session affinity is useful
+  # for stateful applications, but our task-manager is stateless (no server-side
+  # session state) so round-robin is correct.

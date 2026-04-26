@@ -1,0 +1,358 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pom.xml — Maven Project Object Model
+  =====================================
+  This file is the heart of a Maven project. Maven reads it to understand:
+    - What your project IS (groupId, artifactId, version, packaging)
+    - What your project DEPENDS ON (dependencies block)
+    - How to BUILD it (build/plugins block)
+
+  Maven uses a "convention over configuration" philosophy: it expects source
+  code in src/main/java, tests in src/test/java, resources in src/main/resources,
+  etc. You only need to declare what differs from these conventions.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      PARENT — Spring Boot Starter Parent
+      =====================================
+      Inheriting from spring-boot-starter-parent gives us:
+        1. Pre-configured dependency versions (no need to specify versions for
+           Spring-ecosystem libraries — they are tested together for compatibility)
+        2. Default Maven plugin configurations (compiler, surefire for tests, etc.)
+        3. Sensible resource filtering
+
+      INDUSTRY NOTE: This is the standard starting point for Spring Boot projects.
+      In organisations with internal Maven repositories, you might inherit from a
+      corporate parent that itself inherits from spring-boot-starter-parent.
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.5</version>
+        <!-- relativePath empty = fetch from Maven Central, not local file system -->
+        <relativePath/>
+    </parent>
+
+    <!--
+      PROJECT COORDINATES
+      ====================
+      groupId:    Uniquely identifies your organisation (reverse domain convention)
+      artifactId: Uniquely identifies this project within the group
+      version:    Semantic versioning — SNAPSHOT means "in development, not released"
+      packaging:  "jar" produces an executable fat-jar. "war" produces a WAR for
+                  deployment to an external server. We use jar because Spring Boot
+                  embeds Tomcat — no external server needed.
+    -->
+    <groupId>com.example</groupId>
+    <artifactId>task-manager</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>task-manager</name>
+    <description>
+        Educational Spring Boot Task Manager API demonstrating layered architecture,
+        REST best practices, JPA, validation, exception handling, and extensibility
+        for OAuth2, Docker, Kubernetes, and Terraform.
+    </description>
+
+    <!--
+      PROPERTIES
+      ===========
+      Centralise version strings and compiler settings here so they are easy
+      to update. The parent POM reads java.version and configures the Maven
+      Compiler Plugin for us automatically.
+    -->
+    <properties>
+        <java.version>17</java.version>
+        <!-- MapStruct: compile-time DTO mapper (explained further below) -->
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <!-- SpringDoc: generates OpenAPI 3 spec + Swagger UI -->
+        <springdoc.version>2.6.0</springdoc.version>
+    </properties>
+
+    <!-- ================================================================
+         DEPENDENCIES
+         ================================================================
+         Maven resolves and downloads these from Maven Central (or your
+         configured repository mirror). Transitive dependencies (libraries
+         your libraries need) are resolved automatically.
+
+         "scope" controls when a dependency is available:
+           compile  (default) — available everywhere, included in the jar
+           runtime  — not needed to compile, but needed to run
+           test     — only available during test compilation and execution
+           provided — needed to compile but provided by the runtime environment
+                      (e.g., a Servlet container). We do NOT use this because
+                      Spring Boot's embedded Tomcat is scope=compile.
+    ================================================================ -->
+    <dependencies>
+
+        <!-- ── WEB / REST ─────────────────────────────────────────────── -->
+
+        <!--
+          spring-boot-starter-web
+          Pulls in:
+            - Spring MVC (DispatcherServlet, @RestController, etc.)
+            - Embedded Apache Tomcat 10.x (no separate server install needed)
+            - Jackson (JSON serialisation/deserialisation)
+            - spring-boot-starter (core auto-configuration, logging)
+
+          TOMCAT NOTE: The fat jar produced by the Spring Boot plugin contains
+          Tomcat's JAR files. When you run `java -jar app.jar`, Spring Boot
+          starts Tomcat programmatically on port 8080 (configurable in
+          application.yml). This is the same production-grade Tomcat used by
+          enterprises — just embedded rather than standalone.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- ── DATA / PERSISTENCE ─────────────────────────────────────── -->
+
+        <!--
+          spring-boot-starter-data-jpa
+          Pulls in:
+            - Spring Data JPA (repository abstraction)
+            - Hibernate ORM (JPA implementation — translates Java objects to SQL)
+            - HikariCP connection pool (the fastest JDBC connection pool)
+            - spring-boot-starter-jdbc
+
+          JPA (Jakarta Persistence API) is a specification. Hibernate is the
+          most popular implementation. You write annotations like @Entity and
+          @Column; Hibernate translates them to DDL and DML.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+          H2 Database — in-memory SQL database
+          scope=runtime: we don't reference H2 classes directly in our code.
+          Spring Boot auto-configuration detects H2 on the classpath and
+          configures a DataSource automatically (using the URL in application.yml).
+
+          WHY IN-MEMORY: Zero installation, zero configuration, perfect for
+          development and testing. Data is lost when the JVM exits — ideal for
+          a clean slate every run. For production, swap this for PostgreSQL
+          (see application-postgres.yml).
+
+          TO SWITCH TO POSTGRESQL:
+            1. Comment out this dependency.
+            2. Uncomment the postgresql dependency block below.
+            3. Activate the "postgres" profile: spring.profiles.active=postgres
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+          PostgreSQL JDBC Driver — uncomment when using a real Postgres database.
+          Keep scope=runtime (we never import org.postgresql.* directly).
+        -->
+        <!--
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        -->
+
+        <!-- ── VALIDATION ─────────────────────────────────────────────── -->
+
+        <!--
+          spring-boot-starter-validation
+          Pulls in Hibernate Validator, the reference implementation of
+          Jakarta Bean Validation (JSR-380). Annotations like @NotBlank,
+          @Size, @Email on your DTO fields are processed by this library.
+          Spring MVC calls the validator automatically when you use @Valid
+          or @Validated on a controller parameter.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- ── OBSERVABILITY ──────────────────────────────────────────── -->
+
+        <!--
+          spring-boot-starter-actuator
+          Exposes production-ready HTTP endpoints for operations teams:
+            /actuator/health   — is the app alive? (used by K8s probes)
+            /actuator/info     — app metadata
+            /actuator/metrics  — Micrometer metrics (CPU, memory, HTTP counts)
+            /actuator/env      — resolved configuration (be careful in prod!)
+          Configure which endpoints are exposed in application.yml.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- ── SECURITY ───────────────────────────────────────────────── -->
+
+        <!--
+          spring-boot-starter-security
+          By default, adds HTTP Basic authentication to ALL endpoints and
+          generates a random password printed to the console at startup.
+
+          Our SecurityConfig.java overrides this default behaviour with
+          a permissive dev configuration. It also shows where to plug in
+          OAuth2 JWT validation (see SecurityConfig.java for the stub).
+
+          OAUTH2 EXTENSION:
+          When you're ready to add OAuth2, also add:
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!--
+          OAuth2 Resource Server — uncomment to validate JWT Bearer tokens.
+          Works with any OAuth2 provider (Keycloak, Auth0, Okta, AWS Cognito).
+          Configure spring.security.oauth2.resourceserver.jwt.issuer-uri
+          in application.yml to point at your identity provider.
+        -->
+        <!--
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        -->
+
+        <!-- ── API DOCUMENTATION ─────────────────────────────────────── -->
+
+        <!--
+          springdoc-openapi-starter-webmvc-ui
+          Automatically generates an OpenAPI 3.0 specification by inspecting
+          your @RestController classes, DTOs, and validation annotations.
+          Provides Swagger UI at: http://localhost:8080/swagger-ui.html
+          Raw spec at:            http://localhost:8080/v3/api-docs
+          No code changes needed — it works by classpath scanning.
+        -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- ── DTO MAPPING ────────────────────────────────────────────── -->
+
+        <!--
+          MapStruct — compile-time DTO mapper
+          You define a Java interface with mapping method signatures.
+          MapStruct's annotation processor generates a concrete implementation
+          during compilation (visible in target/generated-sources/annotations/).
+
+          ADVANTAGES OVER MANUAL MAPPING:
+            - No runtime reflection (faster than ModelMapper/Dozer)
+            - Compile-time errors if field types don't match
+            - Generated code is readable — easy to debug
+            - Integrates natively with Spring (@Mapper(componentModel = "spring"))
+        -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <!-- ── TESTING ────────────────────────────────────────────────── -->
+
+        <!--
+          spring-boot-starter-test
+          Pulls in:
+            - JUnit 5 (Jupiter) — the test framework
+            - Mockito — mocking library for unit tests
+            - MockMvc — Spring MVC layer testing without a real server
+            - AssertJ — fluent assertions (assertThat(...).isEqualTo(...))
+            - Hamcrest — matcher library (used by MockMvc's jsonPath)
+            - @SpringBootTest — full integration test support
+          scope=test: never included in the production jar.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          Spring Security Test — provides SecurityMockMvcConfigurers.springSecurity()
+          and @WithMockUser for testing secured endpoints without a real token.
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <!-- ================================================================
+         BUILD CONFIGURATION
+         ================================================================ -->
+    <build>
+        <plugins>
+
+            <!--
+              Spring Boot Maven Plugin
+              ========================
+              Primary responsibilities:
+                1. `mvn spring-boot:run`  — runs the app in-process during development
+                2. `mvn package`          — produces an executable fat-jar in target/
+                   The fat-jar contains all dependency jars + your classes, making
+                   it self-contained: `java -jar target/task-manager-0.0.1-SNAPSHOT.jar`
+
+              The repackage goal runs automatically after the standard `package` goal
+              because the parent POM configures it via plugin management.
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!--
+              Maven Compiler Plugin
+              =====================
+              Configures the Java compiler. We must declare annotationProcessorPaths
+              here so MapStruct's processor runs at compile time to generate mapper
+              implementations. Without this, @Mapper interfaces would have no
+              generated implementation and Spring would fail to wire the bean.
+
+              The java.version property (set to 17 above) is read by the parent POM's
+              plugin management configuration and passed to source/target automatically.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <!--
+                      annotationProcessorPaths: run these processors during compilation.
+                      They generate source files in target/generated-sources/annotations/
+                      which are then compiled alongside your hand-written sources.
+                    -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+        </plugins>
+    </build>
+
+</project>

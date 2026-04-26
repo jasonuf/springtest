@@ -1,0 +1,171 @@
+# k8s/deployment.yaml — Kubernetes Deployment
+# =============================================
+# A Deployment manages a set of identical Pod replicas and ensures the desired
+# number are always running. It handles:
+#   - Rolling updates (deploys new versions without downtime)
+#   - Rollback (kubectl rollout undo deployment/task-manager)
+#   - Self-healing (restarts crashed pods automatically)
+#   - Scaling (kubectl scale deployment/task-manager --replicas=5)
+#
+# APPLY:    kubectl apply -f k8s/deployment.yaml
+# STATUS:   kubectl rollout status deployment/task-manager
+# DESCRIBE: kubectl describe deployment task-manager
+# ROLLBACK: kubectl rollout undo deployment/task-manager
+# SCALE:    kubectl scale deployment/task-manager --replicas=3
+# LOGS:     kubectl logs -l app=task-manager --tail=100 -f
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: task-manager
+  namespace: default
+  labels:
+    app: task-manager
+    version: "1.0.0"   # Useful for canary deployments and traffic splitting
+
+spec:
+
+  # ── Replica Count ────────────────────────────────────────────────────────
+  # Run 2 copies of the pod for high availability.
+  # With 2 replicas, a rolling update replaces one pod at a time — no downtime.
+  # Production: use HorizontalPodAutoscaler (HPA) to scale based on CPU/memory.
+  replicas: 2
+
+  # ── Pod Selector ─────────────────────────────────────────────────────────
+  # The Deployment manages pods that have these labels.
+  # Must match the labels in spec.template.metadata.labels below.
+  selector:
+    matchLabels:
+      app: task-manager
+
+  # ── Rolling Update Strategy ───────────────────────────────────────────────
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1         # Create 1 extra pod above replicas during an update
+      maxUnavailable: 0   # Never take a pod down before a new one is ready
+      # With replicas=2, maxSurge=1, maxUnavailable=0:
+      # Kubernetes creates the new pod first (total: 3), then removes the old one (total: 2)
+      # This ensures zero-downtime deployments.
+
+  # ── Pod Template ─────────────────────────────────────────────────────────
+  # Describes the pods the Deployment should create. The Deployment creates
+  # a ReplicaSet from this template, which creates the actual pods.
+  template:
+    metadata:
+      labels:
+        app: task-manager  # Must match spec.selector.matchLabels above
+    spec:
+
+      # ── Containers ────────────────────────────────────────────────────────
+      containers:
+        - name: task-manager
+
+          # The image to pull from the registry.
+          # In production, replace with your registry URL:
+          #   123456789.dkr.ecr.us-east-1.amazonaws.com/task-manager:1.0.0
+          #   ghcr.io/your-org/task-manager:1.0.0
+          image: task-manager:latest
+
+          # imagePullPolicy:
+          #   Always    — pull the image every time the pod starts (good for mutable tags like "latest")
+          #   IfNotPresent — use the local cached image if available (good for immutable tags like "1.0.0")
+          #   Never     — never pull, must be pre-loaded on the node
+          # BEST PRACTICE: Use immutable image tags (SHA or version number) in production
+          # and set IfNotPresent. Avoid "latest" in production — it's not reproducible.
+          imagePullPolicy: IfNotPresent
+
+          # Container port — informational, like EXPOSE in Dockerfile.
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+
+          # ── Environment Variables ─────────────────────────────────────────
+          # Load ALL key-value pairs from the ConfigMap as environment variables.
+          envFrom:
+            - configMapRef:
+                name: task-manager-config  # Must match ConfigMap metadata.name
+
+          # Load specific values from a Secret (uncomment when Secret is created)
+          # env:
+          #   - name: DB_PASSWORD
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: task-manager-secrets
+          #         key: DB_PASSWORD
+
+          # ── Resource Limits ───────────────────────────────────────────────
+          # ALWAYS set resource requests and limits in production.
+          # requests — minimum guaranteed resources (used for pod scheduling)
+          # limits   — maximum allowed (pod is OOMKilled if memory exceeds limit)
+          #
+          # HOW KUBERNETES SCHEDULES:
+          # Kubernetes finds a node with enough available CPU and memory to
+          # satisfy the pod's requests. Without requests, Kubernetes schedules
+          # pods blindly and nodes can become overloaded.
+          resources:
+            requests:
+              memory: "256Mi"   # Pod needs at least 256MB to start
+              cpu: "250m"       # 250 millicores = 0.25 CPU cores
+            limits:
+              memory: "512Mi"   # Kill the pod if it exceeds 512MB (OOMKill)
+              cpu: "500m"       # Throttle CPU above 0.5 cores (not killed, just slowed)
+          # NOTE: Set MaxRAMPercentage in Dockerfile to keep JVM heap BELOW memory limit.
+          # With 512MB limit and -XX:MaxRAMPercentage=75.0: heap ≈ 384MB, leaving 128MB
+          # for off-heap (Metaspace, threads, GC). Tune based on your application's needs.
+
+          # ── Readiness Probe ────────────────────────────────────────────────
+          # Kubernetes checks this before sending traffic to the pod.
+          # If readiness fails, the pod is removed from Service endpoints
+          # (no traffic) but NOT restarted. Useful during startup and
+          # for temporarily taking pods out of rotation (e.g., upstream dependency down).
+          #
+          # /actuator/health/readiness is enabled by management.endpoint.health.probes.enabled=true
+          # Spring Boot marks readiness as DOWN if the app isn't fully started.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 30   # Wait 30s before first check (JVM startup)
+            periodSeconds: 10          # Check every 10 seconds
+            failureThreshold: 3        # Remove from endpoints after 3 consecutive failures
+            successThreshold: 1        # One success restores it to the endpoint pool
+
+          # ── Liveness Probe ─────────────────────────────────────────────────
+          # Kubernetes checks this to determine if the pod is alive.
+          # If liveness fails, the pod is RESTARTED. Use for detecting hung states
+          # (deadlock, OOM but not killed yet, infinite loop).
+          #
+          # IMPORTANT: Set initialDelaySeconds HIGHER than readiness probe.
+          # If liveness check runs before the app has started, it will restart
+          # the pod immediately — the pod never gets a chance to start.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60    # Wait longer than readiness
+            periodSeconds: 30          # Check every 30 seconds (less frequent is fine)
+            failureThreshold: 3        # Restart after 3 consecutive failures
+            timeoutSeconds: 5          # Fail if check takes > 5s
+
+      # ── Graceful Shutdown ─────────────────────────────────────────────────
+      # When Kubernetes removes a pod (scale down, rolling update, node drain):
+      # 1. Kubernetes sends SIGTERM to the container's PID 1 (the JVM)
+      # 2. Spring Boot catches SIGTERM and starts graceful shutdown
+      # 3. Spring refuses new requests, waits for in-flight requests to complete
+      # 4. After terminationGracePeriodSeconds, Kubernetes sends SIGKILL
+      # Set this to be longer than your slowest request + Spring shutdown timeout
+      terminationGracePeriodSeconds: 30
+
+      # ── Topology Spread (optional, for HA) ────────────────────────────────
+      # Spread replicas across different nodes/zones to survive node failures.
+      # Uncomment in production:
+      # topologySpreadConstraints:
+      #   - maxSkew: 1
+      #     topologyKey: kubernetes.io/hostname
+      #     whenUnsatisfiable: DoNotSchedule
+      #     labelSelector:
+      #       matchLabels:
+      #         app: task-manager

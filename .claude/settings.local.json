@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -v '-->')",
+      "Bash(java -version)",
+      "Bash(javac -version)"
+    ]
+  }
+}

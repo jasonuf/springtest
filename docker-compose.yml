@@ -1,0 +1,103 @@
+# docker-compose.yml — Local Container Orchestration
+# =====================================================
+# Docker Compose defines a multi-container application in a single YAML file.
+# It creates a local environment that mirrors production without needing
+# Kubernetes or cloud infrastructure.
+#
+# COMMON COMMANDS:
+#   docker-compose up --build        Build image and start all services
+#   docker-compose up -d             Start in detached mode (background)
+#   docker-compose logs -f app       Follow logs of the "app" service
+#   docker-compose down              Stop and remove containers
+#   docker-compose down -v           Stop, remove containers AND volumes
+#   docker-compose ps                Show running services
+#
+# PROFILES:
+# This file defines one active service (app with H2 in-memory database)
+# and a commented-out postgres service for running with a real database.
+# Uncomment the postgres service to test the PostgreSQL profile locally.
+
+# Compose file format version. v3.9 is compatible with Docker Engine 19.03+
+# and Docker Desktop on Mac/Windows.
+version: '3.9'
+
+services:
+
+  # ── Application Service ───────────────────────────────────────────────────
+  app:
+    # Build the image from the Dockerfile in the current directory (.)
+    # docker-compose handles building the image automatically.
+    build:
+      context: .          # Dockerfile location (current directory)
+      dockerfile: Dockerfile
+
+    # Tag the built image with a name (useful for pushing to a registry later)
+    image: task-manager:latest
+
+    # Port mapping: HOST_PORT:CONTAINER_PORT
+    # http://localhost:8080 on your machine → port 8080 in the container
+    ports:
+      - "8080:8080"
+
+    # Environment variables injected into the container at runtime.
+    # These override application.yml values (Spring's relaxed binding).
+    # SPRING_PROFILES_ACTIVE → spring.profiles.active
+    # Use this to switch between H2 (default) and PostgreSQL (postgres profile).
+    environment:
+      SPRING_PROFILES_ACTIVE: default   # H2 in-memory database
+
+      # ── Uncomment these when using the postgres service below: ────────────
+      # SPRING_PROFILES_ACTIVE: postgres
+      # DB_HOST: postgres         # "postgres" = the service name below (Docker DNS)
+      # DB_PORT: 5432
+      # DB_NAME: taskdb
+      # DB_USER: postgres
+      # DB_PASSWORD: secret       # In production, use Docker Secrets or env files
+
+    # ── Docker-native health check ────────────────────────────────────────
+    # Redundant with the HEALTHCHECK in Dockerfile, but compose overrides allow
+    # different timings for local development.
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "-O", "/dev/null",
+             "http://localhost:8080/actuator/health"]
+      interval: 30s          # Check every 30 seconds
+      timeout: 10s           # Consider unhealthy if check takes > 10s
+      retries: 3             # Mark unhealthy after 3 consecutive failures
+      start_period: 45s      # Wait 45s before starting checks (JVM startup)
+
+    # ── Dependency ordering ───────────────────────────────────────────────
+    # Uncomment when using the postgres service:
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy   # Wait until postgres is healthy, not just started
+
+  # ── PostgreSQL Service (optional) ─────────────────────────────────────────
+  # Uncomment this entire block to run the application with a real PostgreSQL
+  # database. Also uncomment the DB_* environment variables above and
+  # the depends_on block.
+  #
+  # postgres:
+  #   image: postgres:16-alpine   # Official PostgreSQL 16 image on Alpine
+  #   environment:
+  #     POSTGRES_DB: taskdb
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: secret  # NEVER hardcode secrets in production
+  #   ports:
+  #     - "5432:5432"              # Expose to host for local DB clients (DBeaver, psql)
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data   # Named volume — data persists across restarts
+  #   healthcheck:
+  #     # pg_isready: PostgreSQL's own readiness check tool
+  #     test: ["CMD", "pg_isready", "-U", "postgres", "-d", "taskdb"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 10s
+
+# ── Named Volumes ─────────────────────────────────────────────────────────
+# Named volumes persist data between container restarts.
+# Uncomment when using the postgres service above.
+#
+# volumes:
+#   pgdata:
+#     driver: local   # Store data on the local Docker host filesystem
